@@ -106,10 +106,52 @@ def is_evaluation_table(header: List[str], rows: List[List[str]]) -> bool:
     return has_benchmark_header or has_numeric_values
 
 
+def find_main_model_column(header: List[str], model_name: str) -> Optional[int]:
+    """
+    Identify the column index that corresponds to the main model.
+
+    Only returns a column if there's an exact normalized match with the model name.
+    This prevents extracting scores from training checkpoints or similar models.
+
+    Args:
+        header: Table column headers
+        model_name: Model name from repo_id (e.g., "OLMo-3-32B-Think")
+
+    Returns:
+        Column index of the main model, or None if no exact match found
+    """
+    if not header or not model_name:
+        return None
+
+    # Normalize model name and extract tokens
+    normalized_model = model_name.lower().replace("-", " ").replace("_", " ")
+    model_tokens = set(normalized_model.split())
+
+    # Find exact matches only
+    for i, col_name in enumerate(header):
+        if not col_name:
+            continue
+
+        # Skip first column (benchmark names)
+        if i == 0:
+            continue
+
+        normalized_col = col_name.lower().replace("-", " ").replace("_", " ")
+        col_tokens = set(normalized_col.split())
+
+        # Check for exact token match
+        if model_tokens == col_tokens:
+            return i
+
+    # No exact match found
+    return None
+
+
 def extract_metrics_from_table(
     header: List[str],
     rows: List[List[str]],
-    table_format: str = "auto"
+    table_format: str = "auto",
+    model_name: Optional[str] = None
 ) -> List[Dict[str, Any]]:
     """
     Extract metrics from parsed table data.
@@ -118,6 +160,7 @@ def extract_metrics_from_table(
         header: Table column headers
         rows: Table data rows
         table_format: "rows" (benchmarks as rows), "columns" (benchmarks as columns), or "auto"
+        model_name: Optional model name to identify the correct column (for tables with multiple models)
 
     Returns:
         List of metric dictionaries with name, type, and value
@@ -137,6 +180,11 @@ def extract_metrics_from_table(
 
     if table_format == "rows":
         # Benchmarks are in rows, scores in columns
+        # Try to identify the main model column if model_name is provided
+        target_column = None
+        if model_name:
+            target_column = find_main_model_column(header, model_name)
+
         for row in rows:
             if not row:
                 continue
@@ -145,29 +193,43 @@ def extract_metrics_from_table(
             if not benchmark_name:
                 continue
 
-            # Extract numeric values from remaining columns
-            for i, cell in enumerate(row[1:], start=1):
+            # If we identified a specific column, use it; otherwise use first numeric value
+            if target_column is not None and target_column < len(row):
                 try:
-                    # Remove common suffixes and convert to float
-                    value_str = cell.replace("%", "").replace(",", "").strip()
-                    if not value_str:
-                        continue
-
-                    value = float(value_str)
-
-                    # Determine metric name
-                    metric_name = benchmark_name
-                    if len(header) > i and header[i].lower() not in ["score", "value", "result"]:
-                        metric_name = f"{benchmark_name} ({header[i]})"
-
-                    metrics.append({
-                        "name": metric_name,
-                        "type": benchmark_name.lower().replace(" ", "_"),
-                        "value": value
-                    })
-                    break  # Only take first numeric value per row
+                    value_str = row[target_column].replace("%", "").replace(",", "").strip()
+                    if value_str:
+                        value = float(value_str)
+                        metrics.append({
+                            "name": benchmark_name,
+                            "type": benchmark_name.lower().replace(" ", "_"),
+                            "value": value
+                        })
                 except (ValueError, IndexError):
-                    continue
+                    pass
+            else:
+                # Extract numeric values from remaining columns (original behavior)
+                for i, cell in enumerate(row[1:], start=1):
+                    try:
+                        # Remove common suffixes and convert to float
+                        value_str = cell.replace("%", "").replace(",", "").strip()
+                        if not value_str:
+                            continue
+
+                        value = float(value_str)
+
+                        # Determine metric name
+                        metric_name = benchmark_name
+                        if len(header) > i and header[i].lower() not in ["score", "value", "result"]:
+                            metric_name = f"{benchmark_name} ({header[i]})"
+
+                        metrics.append({
+                            "name": metric_name,
+                            "type": benchmark_name.lower().replace(" ", "_"),
+                            "value": value
+                        })
+                        break  # Only take first numeric value per row
+                    except (ValueError, IndexError):
+                        continue
 
     else:  # table_format == "columns"
         # Benchmarks are in columns
@@ -225,6 +287,9 @@ def extract_evaluations_from_readme(
             print(f"No README content found for {repo_id}")
             return None
 
+        # Extract model name from repo_id
+        model_name = repo_id.split("/")[-1] if "/" in repo_id else repo_id
+
         # Extract all tables
         tables = extract_tables_from_markdown(readme_content)
 
@@ -238,7 +303,7 @@ def extract_evaluations_from_readme(
             header, rows = parse_markdown_table(table_str)
 
             if is_evaluation_table(header, rows):
-                metrics = extract_metrics_from_table(header, rows)
+                metrics = extract_metrics_from_table(header, rows, model_name=model_name)
                 all_metrics.extend(metrics)
 
         if not all_metrics:

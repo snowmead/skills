@@ -307,6 +307,18 @@ done < models.txt
 4. **Regular Updates**: Keep evaluation scores current as new benchmarks emerge
 5. **Create PRs for Others**: Use `--create-pr` when updating models you don't own
 6. **Monitor Costs**: Evaluation Jobs are billed by usage. Ensure you check running jobs and costs.
+7. **One model per repo**: Only add one model's 'results' to the model-index. The main model of the repo. No derivatives or forks!
+
+### Column Matching
+
+When extracting evaluation tables with multiple model columns, the script uses **exact normalized token matching**:
+
+- Normalizes both repo name and column names (lowercase, replace `-` and `_` with spaces)
+- Compares token sets: `"OLMo-3-32B-Think"` → `{"olmo", "3", "32b", "think"}` matches `"Olmo 3 Think 32B"`
+- Only extracts if tokens match exactly (handles different word orders and separators)
+- Fails if no exact match found (rather than guessing from similar columns)
+
+This ensures only the correct model's scores are extracted, never unrelated models or training checkpoints. 
 
 ### Common Patterns
 
