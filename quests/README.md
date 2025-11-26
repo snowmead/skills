@@ -1,4 +1,15 @@
+---
+title: README
+emoji: 🐠
+colorFrom: yellow
+colorTo: gray
+sdk: static
+pinned: false
+---
+
 # Humanity's Last Hackathon (of 2025)
+
+<img src="https://github.com/huggingface/skills/raw/main/assets/banner.png" alt="Humanity's Last Hackathon (of 2025)" width="100%">
 
 Welcome to our hackathon!
 
